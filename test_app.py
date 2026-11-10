@@ -14,6 +14,7 @@ from app import (
     parse_money,
     parse_session_date,
 )
+from main import changes_menu
 from storage import SessionRepository
 
 
@@ -137,6 +138,66 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(loaded[0].total, original.total)
         self.assertEqual(loaded[0].person_totals(), original.person_totals())
         self.assertEqual(loaded[0].receipts[0].store.name, "Corner Store")
+
+    def test_changing_item_price_recalculates_session_totals(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(
+                    Product("Shared item", 2, Decimal("10.00")),
+                    (self.a, self.b),
+                ),
+            ),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="editable-session",
+        )
+
+        updated = session.with_item_price(0, 0, Decimal("7.50"))
+
+        self.assertEqual(updated.total, Decimal("15.00"))
+        self.assertEqual(
+            updated.person_totals(),
+            {
+                "A": Decimal("7.50"),
+                "B": Decimal("7.50"),
+                "C": Decimal("0.00"),
+            },
+        )
+        self.assertEqual(session.total, Decimal("20.00"))
+
+    def test_changes_menu_can_change_date_and_price(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(
+                    Product("Shared item", 1, Decimal("10.00")),
+                    (self.a, self.b, self.c),
+                ),
+            ),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="menu-session",
+        )
+        inputs = iter(["1", "2026-11-10", "2", "1", "1", "6.00", "3"])
+        output: list[str] = []
+
+        updated, changed = changes_menu(
+            session, lambda _: next(inputs), output.append
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(updated.session_date, date(2026, 11, 10))
+        self.assertEqual(updated.total, Decimal("6.00"))
+        self.assertIn("=== Changes ===", output)
 
 
 if __name__ == "__main__":

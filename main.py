@@ -241,6 +241,119 @@ def choose_session(
     )
 
 
+def choose_store_index(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> int | None:
+    output_fn("Stores in this session:")
+    for index, receipt in enumerate(session.receipts, start=1):
+        output_fn(f"  {index}. {receipt.store.name}")
+
+    def parse_index(value: str) -> int | None:
+        if not value.strip():
+            return None
+        try:
+            index = int(value)
+        except ValueError as error:
+            raise ValueError("Enter a store number.") from error
+        if index < 1 or index > len(session.receipts):
+            raise ValueError("Choose a number from the stores list.")
+        return index - 1
+
+    return prompt_until_valid(
+        "Store number (blank to return): ",
+        parse_index,
+        input_fn,
+        output_fn,
+    )
+
+
+def choose_item_index(
+    receipt: Receipt, input_fn: Input, output_fn: Output
+) -> int | None:
+    output_fn(f"Items at {receipt.store.name}:")
+    for index, item in enumerate(receipt.items, start=1):
+        output_fn(
+            f"  {index}. {item.product.name} - "
+            f"{item.product.quantity} x {format_money(item.product.unit_price)}"
+        )
+
+    def parse_index(value: str) -> int | None:
+        if not value.strip():
+            return None
+        try:
+            index = int(value)
+        except ValueError as error:
+            raise ValueError("Enter an item number.") from error
+        if index < 1 or index > len(receipt.items):
+            raise ValueError("Choose a number from the items list.")
+        return index - 1
+
+    return prompt_until_valid(
+        "Item number (blank to return): ",
+        parse_index,
+        input_fn,
+        output_fn,
+    )
+
+
+def change_date(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    new_date = read_session_date(input_fn, output_fn, session.session_date)
+    return session.with_date(new_date)
+
+
+def change_item_price(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    receipt_index = choose_store_index(session, input_fn, output_fn)
+    if receipt_index is None:
+        return session
+    receipt = session.receipts[receipt_index]
+    item_index = choose_item_index(receipt, input_fn, output_fn)
+    if item_index is None:
+        return session
+    item = receipt.items[item_index]
+    new_price = prompt_until_valid(
+        f"New unit price for {item.product.name} "
+        f"[{format_money(item.product.unit_price)}]: ",
+        parse_money,
+        input_fn,
+        output_fn,
+    )
+    return session.with_item_price(receipt_index, item_index, new_price)
+
+
+ChangeHandler = Callable[[PaymentSession, Input, Output], PaymentSession]
+CHANGE_HANDLERS: dict[str, tuple[str, ChangeHandler]] = {
+    "1": ("Change session date", change_date),
+    "2": ("Change item price", change_item_price),
+}
+
+
+def changes_menu(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> tuple[PaymentSession, bool]:
+    current = session
+    changed = False
+    while True:
+        output_fn("")
+        output_fn("=== Changes ===")
+        for number, (label, _) in CHANGE_HANDLERS.items():
+            output_fn(f"{number}. {label}")
+        output_fn("3. Return to main menu")
+        choice = input_fn("Choose a change: ").strip()
+        if choice == "3":
+            return current, changed
+        handler_entry = CHANGE_HANDLERS.get(choice)
+        if handler_entry is None:
+            output_fn("Error: Choose one of the listed changes.")
+            continue
+        updated = handler_entry[1](current, input_fn, output_fn)
+        changed = changed or updated != current
+        current = updated
+
+
 def run(
     input_fn: Input = input,
     output_fn: Output = print,
@@ -259,7 +372,7 @@ def run(
         output_fn("")
         output_fn("1. Log a new payment session")
         output_fn("2. View saved sessions")
-        output_fn("3. Change a saved session date")
+        output_fn("3. Changes")
         output_fn("4. Exit")
         choice = input_fn("Choose an option: ").strip()
 
@@ -286,16 +399,18 @@ def run(
             selected = choose_session(tuple(sessions), input_fn, output_fn)
             if selected is None:
                 continue
-            new_date = read_session_date(input_fn, output_fn, selected.session_date)
-            updated = selected.with_date(new_date)
-            sessions[sessions.index(selected)] = updated
+            updated, changed = changes_menu(selected, input_fn, output_fn)
+            if not changed:
+                continue
+            selected_index = sessions.index(selected)
+            sessions[selected_index] = updated
             try:
                 repository.save(sessions)
             except SessionStorageError as error:
                 output_fn(f"Storage error: {error}")
-                sessions[sessions.index(updated)] = selected
+                sessions[selected_index] = selected
                 continue
-            output_fn("Session date updated.")
+            output_fn("Changes saved.")
             continue
 
         if choice == "4":
