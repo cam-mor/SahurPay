@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 from decimal import Decimal
 from typing import TypeVar
 
 from app import (
+    PaymentSession,
     Person,
     Product,
     Receipt,
@@ -13,7 +15,9 @@ from app import (
     ensure_unique_people,
     parse_money,
     parse_positive_integer,
+    parse_session_date,
 )
+from storage import SessionRepository, SessionStorageError
 
 
 Input = Callable[[str], str]
@@ -53,16 +57,16 @@ def read_people(input_fn: Input, output_fn: Output) -> tuple[Person, ...]:
         )
 
         def parse_name(value: str, fallback: str = default) -> Person:
-            name = value.strip() or fallback
-            return Person(name)
+            return Person(value.strip() or fallback)
 
-        person = prompt_until_valid(
-            f"Name for person {index + 1} [{default}]: ",
-            parse_name,
-            input_fn,
-            output_fn,
+        people.append(
+            prompt_until_valid(
+                f"Name for person {index + 1} [{default}]: ",
+                parse_name,
+                input_fn,
+                output_fn,
+            )
         )
-        people.append(person)
     try:
         return ensure_unique_people(people)
     except ValueError:
@@ -71,10 +75,28 @@ def read_people(input_fn: Input, output_fn: Output) -> tuple[Person, ...]:
 
 
 def read_store(input_fn: Input, output_fn: Output) -> Store:
-    def parse_store(value: str) -> Store:
-        return Store(value.strip())
+    return prompt_until_valid(
+        "Store name: ",
+        lambda value: Store(value.strip()),
+        input_fn,
+        output_fn,
+    )
 
-    return prompt_until_valid("Store name: ", parse_store, input_fn, output_fn)
+
+def read_session_date(
+    input_fn: Input, output_fn: Output, default: date | None = None
+) -> date:
+    default_date = default or date.today()
+
+    def parse_date_or_default(value: str) -> date:
+        return default_date if not value.strip() else parse_session_date(value)
+
+    return prompt_until_valid(
+        f"Session date [{default_date.isoformat()}]: ",
+        parse_date_or_default,
+        input_fn,
+        output_fn,
+    )
 
 
 def read_participants(
@@ -126,11 +148,24 @@ def read_items(
             "Unit price: ", parse_money, input_fn, output_fn
         )
         participants = read_participants(people, input_fn, output_fn)
-        items.append(
-            ReceiptItem(
-                Product(name, quantity, unit_price), participants
-            )
-        )
+        items.append(ReceiptItem(Product(name, quantity, unit_price), participants))
+
+
+def read_receipts(
+    people: tuple[Person, ...], input_fn: Input, output_fn: Output
+) -> tuple[Receipt, ...]:
+    receipts: list[Receipt] = []
+    output_fn("Enter stores. Leave the store name blank when finished.")
+    while True:
+        name = input_fn("Store name: ").strip()
+        if not name:
+            if receipts:
+                return tuple(receipts)
+            output_fn("Error: Enter at least one store.")
+            continue
+        store = Store(name)
+        items = read_items(people, input_fn, output_fn)
+        receipts.append(Receipt(store, people, items))
 
 
 def format_money(amount: Decimal) -> str:
@@ -138,10 +173,7 @@ def format_money(amount: Decimal) -> str:
 
 
 def print_receipt(receipt: Receipt, output_fn: Output) -> None:
-    output_fn("")
-    output_fn("=== Receipt Summary ===")
     output_fn(f"Store: {receipt.store.name}")
-    output_fn("")
     for item in receipt.items:
         product = item.product
         output_fn(
@@ -150,23 +182,127 @@ def print_receipt(receipt: Receipt, output_fn: Output) -> None:
         )
         for name, amount in item.allocation.items():
             output_fn(f"    {name}: {format_money(amount)}")
+    output_fn(f"Store total: {format_money(receipt.total)}")
+
+
+def print_session(session: PaymentSession, output_fn: Output) -> None:
     output_fn("")
-    output_fn(f"Receipt total: {format_money(receipt.total)}")
+    output_fn("=== Payment Session ===")
+    output_fn(f"Date: {session.session_date.isoformat()}")
+    output_fn(f"Stores: {len(session.receipts)}")
     output_fn("")
-    output_fn("=== Amounts Owed ===")
-    for name, amount in receipt.person_totals().items():
+    for index, receipt in enumerate(session.receipts, start=1):
+        output_fn(f"--- Store {index} ---")
+        print_receipt(receipt, output_fn)
+        output_fn("")
+    output_fn(f"Session total: {format_money(session.total)}")
+    output_fn("")
+    output_fn("=== Amounts Owed Across Session ===")
+    for name, amount in session.person_totals().items():
         output_fn(f"{name}: {format_money(amount)}")
 
 
-def run(input_fn: Input = input, output_fn: Output = print) -> Receipt:
-    output_fn("SahurPay")
-    output_fn("Track a receipt and split each product among your group.")
+def create_session(input_fn: Input, output_fn: Output) -> PaymentSession:
     people = read_people(input_fn, output_fn)
-    store = read_store(input_fn, output_fn)
-    items = read_items(people, input_fn, output_fn)
-    receipt = Receipt(store, people, items)
-    print_receipt(receipt, output_fn)
-    return receipt
+    session_date = read_session_date(input_fn, output_fn)
+    receipts = read_receipts(people, input_fn, output_fn)
+    return PaymentSession(session_date, people, receipts)
+
+
+def choose_session(
+    sessions: tuple[PaymentSession, ...], input_fn: Input, output_fn: Output
+) -> PaymentSession | None:
+    if not sessions:
+        output_fn("No saved payment sessions.")
+        return None
+    output_fn("Saved payment sessions:")
+    for index, session in enumerate(sessions, start=1):
+        output_fn(
+            f"  {index}. {session.session_date.isoformat()} - "
+            f"{len(session.receipts)} store(s) - {format_money(session.total)}"
+        )
+
+    def parse_index(value: str) -> PaymentSession | None:
+        if not value.strip():
+            return None
+        try:
+            index = int(value)
+        except ValueError as error:
+            raise ValueError("Enter a session number.") from error
+        if index < 1 or index > len(sessions):
+            raise ValueError("Choose a number from the saved sessions list.")
+        return sessions[index - 1]
+
+    return prompt_until_valid(
+        "Session number (blank to return): ",
+        parse_index,
+        input_fn,
+        output_fn,
+    )
+
+
+def run(
+    input_fn: Input = input,
+    output_fn: Output = print,
+    repository: SessionRepository | None = None,
+) -> PaymentSession | None:
+    repository = repository or SessionRepository()
+    try:
+        sessions = list(repository.load())
+    except SessionStorageError as error:
+        output_fn(f"Storage error: {error}")
+        return None
+
+    output_fn("SahurPay")
+    output_fn("Track payment sessions across multiple stores.")
+    while True:
+        output_fn("")
+        output_fn("1. Log a new payment session")
+        output_fn("2. View saved sessions")
+        output_fn("3. Change a saved session date")
+        output_fn("4. Exit")
+        choice = input_fn("Choose an option: ").strip()
+
+        if choice == "1":
+            session = create_session(input_fn, output_fn)
+            sessions.append(session)
+            try:
+                repository.save(sessions)
+            except SessionStorageError as error:
+                output_fn(f"Storage error: {error}")
+                sessions.pop()
+                continue
+            output_fn("Payment session saved.")
+            print_session(session, output_fn)
+            continue
+
+        if choice == "2":
+            selected = choose_session(tuple(sessions), input_fn, output_fn)
+            if selected is not None:
+                print_session(selected, output_fn)
+            continue
+
+        if choice == "3":
+            selected = choose_session(tuple(sessions), input_fn, output_fn)
+            if selected is None:
+                continue
+            new_date = read_session_date(input_fn, output_fn, selected.session_date)
+            updated = selected.with_date(new_date)
+            sessions[sessions.index(selected)] = updated
+            try:
+                repository.save(sessions)
+            except SessionStorageError as error:
+                output_fn(f"Storage error: {error}")
+                sessions[sessions.index(updated)] = selected
+                continue
+            output_fn("Session date updated.")
+            continue
+
+        if choice == "4":
+            output_fn("Goodbye.")
+            return sessions[-1] if sessions else None
+
+        output_fn("Error: Choose 1, 2, 3, or 4.")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 from typing import Iterable
+from uuid import uuid4
 
 
 MONEY_QUANTUM = Decimal("0.01")
@@ -109,6 +111,49 @@ class Receipt:
         return {name: quantize_money(amount) for name, amount in totals.items()}
 
 
+@dataclass(frozen=True)
+class PaymentSession:
+    session_date: date
+    people: tuple[Person, ...]
+    receipts: tuple[Receipt, ...]
+    session_id: str = ""
+
+    def __post_init__(self) -> None:
+        people = ensure_unique_people(self.people)
+        if not people:
+            raise ValueError("A payment session must have at least one person.")
+        if not self.receipts:
+            raise ValueError("A payment session must have at least one store.")
+        session_id = self.session_id or uuid4().hex
+        if not session_id.strip():
+            raise ValueError("A payment session must have an ID.")
+        people_names = tuple(person.name for person in people)
+        for receipt in self.receipts:
+            if tuple(person.name for person in receipt.people) != people_names:
+                raise ValueError("All stores in a session must use the same people.")
+        object.__setattr__(self, "people", people)
+        object.__setattr__(self, "session_id", session_id)
+
+    @property
+    def total(self) -> Decimal:
+        return quantize_money(sum(receipt.total for receipt in self.receipts))
+
+    def person_totals(self) -> dict[str, Decimal]:
+        totals = {person.name: Decimal("0.00") for person in self.people}
+        for receipt in self.receipts:
+            for name, amount in receipt.person_totals().items():
+                totals[name] += amount
+        return {name: quantize_money(amount) for name, amount in totals.items()}
+
+    def with_date(self, session_date: date) -> PaymentSession:
+        return PaymentSession(
+            session_date=session_date,
+            people=self.people,
+            receipts=self.receipts,
+            session_id=self.session_id,
+        )
+
+
 def parse_money(value: str) -> Decimal:
     """Parse a non-negative decimal currency value."""
     try:
@@ -128,6 +173,13 @@ def parse_positive_integer(value: str) -> int:
     if number <= 0:
         raise ValueError("Enter a whole number greater than zero.")
     return number
+
+
+def parse_session_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as error:
+        raise ValueError("Enter a date in YYYY-MM-DD format.") from error
 
 
 def ensure_unique_people(people: Iterable[Person]) -> tuple[Person, ...]:
