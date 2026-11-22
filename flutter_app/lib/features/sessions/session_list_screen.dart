@@ -8,9 +8,11 @@ class SessionListScreen extends StatelessWidget {
   const SessionListScreen({
     super.key,
     required this.sessions,
+    required this.onCreateSession,
   });
 
   final List<PaymentSession> sessions;
+  final Future<void> Function() onCreateSession;
 
   @override
   Widget build(BuildContext context) {
@@ -90,13 +92,7 @@ class SessionListScreen extends StatelessWidget {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Session creation is coming in the next slice.'),
-            ),
-          );
-        },
+        onPressed: onCreateSession,
         icon: const Icon(Icons.add),
         label: const Text('New session'),
       ),

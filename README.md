@@ -188,6 +188,10 @@ The first vertical slice includes:
 - Backward-compatible categories, notes, and payer fields
 - A responsive Material 3 payment-history screen
 - Desktop and mobile navigation layout foundations
+- Session creation with configurable people and date
+- Multiple store receipts and product lines
+- Responsible-person selection, prices, quantities, categories, notes, and payer
+- Local JSON persistence under the platform application document directory
 - A session detail view with:
   - Session and store totals
   - People and net signed balances

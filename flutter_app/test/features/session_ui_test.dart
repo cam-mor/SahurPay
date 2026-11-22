@@ -11,6 +11,7 @@ void main() {
       MaterialApp(
         home: SessionListScreen(
           sessions: repository.loadSessions(),
+          onCreateSession: () async {},
         ),
       ),
     );
