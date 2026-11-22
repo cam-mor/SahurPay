@@ -173,7 +173,46 @@ main.py        Terminal menu and interactive workflows
 storage.py     JSON loading, saving, export, and import
 test_app.py    Unit and smoke-test coverage
 data/          Local saved payment history
+flutter_app/   Flutter cross-platform interface and migration work
 ```
+
+## Flutter interface
+
+A Flutter UI migration is now started under [`flutter_app/`](./flutter_app).
+
+The first vertical slice includes:
+
+- Typed Dart models for people, products, receipt items, store receipts, and sessions
+- Exact integer-cent money handling
+- Migration parsing for the existing Python `data/sessions.json` format
+- Backward-compatible categories, notes, and payer fields
+- A responsive Material 3 payment-history screen
+- Desktop and mobile navigation layout foundations
+- A session detail view with:
+  - Session and store totals
+  - People and net signed balances
+  - Product allocations
+  - Categories and notes
+  - Payer information
+- Android, iOS, Linux, macOS, and Windows platform scaffolding
+
+Run the Flutter app from the repository root:
+
+```bash
+cd flutter_app
+flutter pub get
+flutter run
+```
+
+Run Flutter checks:
+
+```bash
+cd flutter_app
+flutter analyze
+flutter test
+```
+
+The Linux desktop build needs Ninja and a C++ compiler. The Flutter environment in this repository currently has Ninja available locally and GTK installed, but a complete Linux build requires the remaining compiler setup on the host.
 
 ## Tests
 

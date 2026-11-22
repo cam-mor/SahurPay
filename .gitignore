@@ -208,6 +208,14 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Flutter generated and local build state
+/flutter_app/.dart_tool/
+/flutter_app/build/
+/flutter_app/.flutter-plugins
+/flutter_app/.flutter-plugins-dependencies
+
+
+
 # SahurPay local payment history
 data/sessions.json
 
