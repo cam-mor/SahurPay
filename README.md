@@ -24,6 +24,9 @@ This started as a personal project, so it is intentionally simple and terminal-f
   - Name
   - Quantity
   - Unit price
+- Assign an optional category and note to the session.
+- Assign an optional category and note to each store receipt.
+- Assign an optional category and note to each product.
 - Assign responsible people to each product.
 - Split a product equally among one or more selected people.
 - Calculate the exact receipt total and each person's share.
@@ -42,10 +45,26 @@ The **Changes** menu lets you edit existing sessions and receipts:
 - Product quantity
 - Product unit price
 - Responsible people
+- Session category
+- Session note
+- Store category
+- Store note
+- Product category
+- Product note
 - Delete an individual product
 - Delete an entire store receipt
 
 Edits automatically recalculate store, session, and per-person totals.
+
+### Undo
+
+- Undo the latest in-process session edit.
+- Undo the latest session deletion.
+- Undo session creation and backup import replacement.
+- Keep up to 20 undo snapshots while the app is running.
+- Persist every undo result immediately to the local JSON file.
+
+Undo history is intentionally in-memory for now, so restarting the app clears it.
 
 ### Session history
 
@@ -99,7 +118,8 @@ The app starts with a simple menu:
 5. Search sessions
 6. View settlements
 7. Backup and restore
-8. Exit
+8. Undo last change
+9. Exit
 ```
 
 ## Example workflow
@@ -175,10 +195,7 @@ Possible future improvements:
 
 - A graphical or web interface
 - Payment status and marking a settlement as complete
-- Categories and notes
 - CSV export
-- Undo for edits and deletions
 - Recurring or duplicate sessions
 - Currency selection and localization
 - Session labels and product photos
-

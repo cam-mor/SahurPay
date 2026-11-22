@@ -39,6 +39,8 @@ class Product:
     name: str
     quantity: int
     unit_price: Decimal
+    category: str = ""
+    note: str = ""
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -55,13 +57,49 @@ class Product:
         return quantize_money(self.unit_price * self.quantity)
 
     def with_unit_price(self, unit_price: Decimal) -> Product:
-        return Product(self.name, self.quantity, unit_price)
+        return Product(
+            self.name,
+            self.quantity,
+            unit_price,
+            self.category,
+            self.note,
+        )
 
     def with_name(self, name: str) -> Product:
-        return Product(name, self.quantity, self.unit_price)
+        return Product(
+            name,
+            self.quantity,
+            self.unit_price,
+            self.category,
+            self.note,
+        )
 
     def with_quantity(self, quantity: int) -> Product:
-        return Product(self.name, quantity, self.unit_price)
+        return Product(
+            self.name,
+            quantity,
+            self.unit_price,
+            self.category,
+            self.note,
+        )
+
+    def with_category(self, category: str) -> Product:
+        return Product(
+            self.name,
+            self.quantity,
+            self.unit_price,
+            category,
+            self.note,
+        )
+
+    def with_note(self, note: str) -> Product:
+        return Product(
+            self.name,
+            self.quantity,
+            self.unit_price,
+            self.category,
+            note,
+        )
 
 
 @dataclass(frozen=True)
@@ -99,6 +137,8 @@ class Receipt:
     people: tuple[Person, ...]
     items: tuple[ReceiptItem, ...]
     payer: Person | None = None
+    category: str = ""
+    note: str = ""
 
     def __post_init__(self) -> None:
         names = [person.name for person in self.people]
@@ -131,7 +171,14 @@ class Receipt:
             item.product.with_unit_price(unit_price),
             item.participants,
         )
-        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+        return Receipt(
+            self.store,
+            self.people,
+            tuple(updated_items),
+            self.payer,
+            self.category,
+            self.note,
+        )
 
     def with_item_participants(
         self, item_index: int, participants: tuple[Person, ...]
@@ -141,10 +188,24 @@ class Receipt:
         updated_items = list(self.items)
         item = updated_items[item_index]
         updated_items[item_index] = ReceiptItem(item.product, participants)
-        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+        return Receipt(
+            self.store,
+            self.people,
+            tuple(updated_items),
+            self.payer,
+            self.category,
+            self.note,
+        )
 
     def with_store_name(self, name: str) -> Receipt:
-        return Receipt(Store(name), self.people, self.items, self.payer)
+        return Receipt(
+            Store(name),
+            self.people,
+            self.items,
+            self.payer,
+            self.category,
+            self.note,
+        )
 
     def with_item_name(self, item_index: int, name: str) -> Receipt:
         if item_index < 0 or item_index >= len(self.items):
@@ -155,7 +216,14 @@ class Receipt:
             item.product.with_name(name),
             item.participants,
         )
-        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+        return Receipt(
+            self.store,
+            self.people,
+            tuple(updated_items),
+            self.payer,
+            self.category,
+            self.note,
+        )
 
     def with_item_quantity(self, item_index: int, quantity: int) -> Receipt:
         if item_index < 0 or item_index >= len(self.items):
@@ -166,7 +234,14 @@ class Receipt:
             item.product.with_quantity(quantity),
             item.participants,
         )
-        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+        return Receipt(
+            self.store,
+            self.people,
+            tuple(updated_items),
+            self.payer,
+            self.category,
+            self.note,
+        )
 
     def without_item(self, item_index: int) -> Receipt:
         if item_index < 0 or item_index >= len(self.items):
@@ -175,10 +250,44 @@ class Receipt:
         updated_items.pop(item_index)
         if not updated_items:
             raise ValueError("A store receipt must keep at least one item.")
-        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+        return Receipt(
+            self.store,
+            self.people,
+            tuple(updated_items),
+            self.payer,
+            self.category,
+            self.note,
+        )
 
     def with_payer(self, payer: Person | None) -> Receipt:
-        return Receipt(self.store, self.people, self.items, payer)
+        return Receipt(
+            self.store,
+            self.people,
+            self.items,
+            payer,
+            self.category,
+            self.note,
+        )
+
+    def with_category(self, category: str) -> Receipt:
+        return Receipt(
+            self.store,
+            self.people,
+            self.items,
+            self.payer,
+            category,
+            self.note,
+        )
+
+    def with_note(self, note: str) -> Receipt:
+        return Receipt(
+            self.store,
+            self.people,
+            self.items,
+            self.payer,
+            self.category,
+            note,
+        )
 
 
 @dataclass(frozen=True)
@@ -187,6 +296,8 @@ class PaymentSession:
     people: tuple[Person, ...]
     receipts: tuple[Receipt, ...]
     session_id: str = ""
+    category: str = ""
+    note: str = ""
 
     def __post_init__(self) -> None:
         people = ensure_unique_people(self.people)
@@ -221,6 +332,8 @@ class PaymentSession:
             people=self.people,
             receipts=self.receipts,
             session_id=self.session_id,
+            category=self.category,
+            note=self.note,
         )
 
     def with_item_price(
@@ -237,6 +350,8 @@ class PaymentSession:
             people=self.people,
             receipts=tuple(updated_receipts),
             session_id=self.session_id,
+            category=self.category,
+            note=self.note,
         )
 
     def with_item_participants(
@@ -256,6 +371,8 @@ class PaymentSession:
             people=self.people,
             receipts=tuple(updated_receipts),
             session_id=self.session_id,
+            category=self.category,
+            note=self.note,
         )
 
     def with_store_name(self, receipt_index: int, name: str) -> PaymentSession:
@@ -270,6 +387,8 @@ class PaymentSession:
             self.people,
             tuple(updated_receipts),
             self.session_id,
+            self.category,
+            self.note,
         )
 
     def with_item_name(
@@ -286,6 +405,8 @@ class PaymentSession:
             self.people,
             tuple(updated_receipts),
             self.session_id,
+            self.category,
+            self.note,
         )
 
     def with_item_quantity(
@@ -302,6 +423,8 @@ class PaymentSession:
             self.people,
             tuple(updated_receipts),
             self.session_id,
+            self.category,
+            self.note,
         )
 
     def without_item(
@@ -318,6 +441,8 @@ class PaymentSession:
             self.people,
             tuple(updated_receipts),
             self.session_id,
+            self.category,
+            self.note,
         )
 
     def without_store(self, receipt_index: int) -> PaymentSession:
@@ -332,6 +457,8 @@ class PaymentSession:
             self.people,
             tuple(updated_receipts),
             self.session_id,
+            self.category,
+            self.note,
         )
 
     def with_payer(
@@ -348,6 +475,128 @@ class PaymentSession:
             self.people,
             tuple(updated_receipts),
             self.session_id,
+            self.category,
+            self.note,
+        )
+
+    def with_category(self, category: str) -> PaymentSession:
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            self.receipts,
+            self.session_id,
+            category,
+            self.note,
+        )
+
+    def with_note(self, note: str) -> PaymentSession:
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            self.receipts,
+            self.session_id,
+            self.category,
+            note,
+        )
+
+    def with_store_category(
+        self, receipt_index: int, category: str
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].with_category(category)
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+            self.category,
+            self.note,
+        )
+
+    def with_store_note(
+        self, receipt_index: int, note: str
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].with_note(note)
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+            self.category,
+            self.note,
+        )
+
+    def with_item_category(
+        self, receipt_index: int, item_index: int, category: str
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        receipt = updated_receipts[receipt_index]
+        if item_index < 0 or item_index >= len(receipt.items):
+            raise IndexError("Receipt item index is out of range.")
+        updated_items = list(receipt.items)
+        item = updated_items[item_index]
+        updated_items[item_index] = ReceiptItem(
+            item.product.with_category(category),
+            item.participants,
+        )
+        updated_receipts[receipt_index] = Receipt(
+            receipt.store,
+            receipt.people,
+            tuple(updated_items),
+            receipt.payer,
+            receipt.category,
+            receipt.note,
+        )
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+            self.category,
+            self.note,
+        )
+
+    def with_item_note(
+        self, receipt_index: int, item_index: int, note: str
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        receipt = updated_receipts[receipt_index]
+        if item_index < 0 or item_index >= len(receipt.items):
+            raise IndexError("Receipt item index is out of range.")
+        updated_items = list(receipt.items)
+        item = updated_items[item_index]
+        updated_items[item_index] = ReceiptItem(
+            item.product.with_note(note),
+            item.participants,
+        )
+        updated_receipts[receipt_index] = Receipt(
+            receipt.store,
+            receipt.people,
+            tuple(updated_items),
+            receipt.payer,
+            receipt.category,
+            receipt.note,
+        )
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+            self.category,
+            self.note,
         )
 
 
@@ -448,14 +697,17 @@ def filter_sessions(
                 continue
         if needle:
             searchable: list[str] = [session.session_id]
+            searchable.extend([session.category, session.note])
             for person in session.people:
                 searchable.append(person.name)
             for receipt in session.receipts:
                 searchable.append(receipt.store.name)
+                searchable.extend([receipt.category, receipt.note])
                 if receipt.payer is not None:
                     searchable.append(receipt.payer.name)
                 for item in receipt.items:
                     searchable.append(item.product.name)
+                    searchable.extend([item.product.category, item.product.note])
             if not any(needle in value.casefold() for value in searchable):
                 continue
         result.append(session)

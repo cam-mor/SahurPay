@@ -179,8 +179,15 @@ def read_items(
         unit_price = prompt_until_valid(
             "Unit price: ", parse_money, input_fn, output_fn
         )
+        category = input_fn("Product category (blank for none): ").strip()
+        note = input_fn("Product note (blank for none): ").strip()
         participants = read_participants(people, input_fn, output_fn)
-        items.append(ReceiptItem(Product(name, quantity, unit_price), participants))
+        items.append(
+            ReceiptItem(
+                Product(name, quantity, unit_price, category, note),
+                participants,
+            )
+        )
 
 
 def read_receipts(
@@ -196,9 +203,13 @@ def read_receipts(
             output_fn("Error: Enter at least one store.")
             continue
         store = Store(name)
+        category = input_fn("Store category (blank for none): ").strip()
+        note = input_fn("Store note (blank for none): ").strip()
         payer = read_payer(people, input_fn, output_fn)
         items = read_items(people, input_fn, output_fn)
-        receipts.append(Receipt(store, people, items, payer))
+        receipts.append(
+            Receipt(store, people, items, payer, category, note)
+        )
 
 
 def format_money(amount: Decimal) -> str:
@@ -207,6 +218,10 @@ def format_money(amount: Decimal) -> str:
 
 def print_receipt(receipt: Receipt, output_fn: Output) -> None:
     output_fn(f"Store: {receipt.store.name}")
+    if receipt.category:
+        output_fn(f"Category: {receipt.category}")
+    if receipt.note:
+        output_fn(f"Note: {receipt.note}")
     if receipt.payer is not None:
         output_fn(f"Payer: {receipt.payer.name}")
     else:
@@ -217,6 +232,10 @@ def print_receipt(receipt: Receipt, output_fn: Output) -> None:
             f"- {product.name}: {product.quantity} x "
             f"{format_money(product.unit_price)} = {format_money(product.total)}"
         )
+        if product.category:
+            output_fn(f"    Category: {product.category}")
+        if product.note:
+            output_fn(f"    Note: {product.note}")
         for name, amount in item.allocation.items():
             output_fn(f"    {name}: {format_money(amount)}")
     output_fn(f"Store total: {format_money(receipt.total)}")
@@ -226,6 +245,10 @@ def print_session(session: PaymentSession, output_fn: Output) -> None:
     output_fn("")
     output_fn("=== Payment Session ===")
     output_fn(f"Date: {session.session_date.isoformat()}")
+    if session.category:
+        output_fn(f"Category: {session.category}")
+    if session.note:
+        output_fn(f"Note: {session.note}")
     output_fn(f"Stores: {len(session.receipts)}")
     output_fn("")
     for index, receipt in enumerate(session.receipts, start=1):
@@ -242,8 +265,16 @@ def print_session(session: PaymentSession, output_fn: Output) -> None:
 def create_session(input_fn: Input, output_fn: Output) -> PaymentSession:
     people = read_people(input_fn, output_fn)
     session_date = read_session_date(input_fn, output_fn)
+    category = input_fn("Session category (blank for none): ").strip()
+    note = input_fn("Session note (blank for none): ").strip()
     receipts = read_receipts(people, input_fn, output_fn)
-    return PaymentSession(session_date, people, receipts)
+    return PaymentSession(
+        session_date,
+        people,
+        receipts,
+        category=category,
+        note=note,
+    )
 
 
 def choose_session(
@@ -641,6 +672,84 @@ def change_payer(
     return session.with_payer(receipt_index, payer)
 
 
+def change_session_category(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    category = input_fn(
+        f"Session category [{session.category or 'none'}]: "
+    ).strip()
+    return session.with_category(category)
+
+
+def change_session_note(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    note = input_fn(
+        f"Session note [{session.note or 'none'}]: "
+    ).strip()
+    return session.with_note(note)
+
+
+def change_store_category(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    receipt_index = choose_store_index(session, input_fn, output_fn)
+    if receipt_index is None:
+        return session
+    receipt = session.receipts[receipt_index]
+    category = input_fn(
+        f"Store category [{receipt.category or 'none'}]: "
+    ).strip()
+    return session.with_store_category(receipt_index, category)
+
+
+def change_store_note(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    receipt_index = choose_store_index(session, input_fn, output_fn)
+    if receipt_index is None:
+        return session
+    receipt = session.receipts[receipt_index]
+    note = input_fn(
+        f"Store note [{receipt.note or 'none'}]: "
+    ).strip()
+    return session.with_store_note(receipt_index, note)
+
+
+def change_item_category(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    receipt_index = choose_store_index(session, input_fn, output_fn)
+    if receipt_index is None:
+        return session
+    receipt = session.receipts[receipt_index]
+    item_index = choose_item_index(receipt, input_fn, output_fn)
+    if item_index is None:
+        return session
+    item = receipt.items[item_index]
+    category = input_fn(
+        f"Product category [{item.product.category or 'none'}]: "
+    ).strip()
+    return session.with_item_category(receipt_index, item_index, category)
+
+
+def change_item_note(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    receipt_index = choose_store_index(session, input_fn, output_fn)
+    if receipt_index is None:
+        return session
+    receipt = session.receipts[receipt_index]
+    item_index = choose_item_index(receipt, input_fn, output_fn)
+    if item_index is None:
+        return session
+    item = receipt.items[item_index]
+    note = input_fn(
+        f"Product note [{item.product.note or 'none'}]: "
+    ).strip()
+    return session.with_item_note(receipt_index, item_index, note)
+
+
 ChangeHandler = Callable[[PaymentSession, Input, Output], PaymentSession]
 CHANGE_HANDLERS: dict[str, tuple[str, ChangeHandler]] = {
     "1": ("Change session date", change_date),
@@ -652,6 +761,12 @@ CHANGE_HANDLERS: dict[str, tuple[str, ChangeHandler]] = {
     "7": ("Delete product", delete_item),
     "8": ("Delete store", delete_store),
     "9": ("Change payer", change_payer),
+    "10": ("Change session category", change_session_category),
+    "11": ("Change session note", change_session_note),
+    "12": ("Change store category", change_store_category),
+    "13": ("Change store note", change_store_note),
+    "14": ("Change product category", change_item_category),
+    "15": ("Change product note", change_item_note),
 }
 
 
@@ -690,6 +805,7 @@ def run(
     except SessionStorageError as error:
         output_fn(f"Storage error: {error}")
         return None
+    undo_stack: list[tuple[str, tuple[PaymentSession, ...]]] = []
 
     output_fn("SahurPay")
     output_fn("Track payment sessions across multiple stores.")
@@ -702,10 +818,12 @@ def run(
         output_fn("5. Search sessions")
         output_fn("6. View settlements")
         output_fn("7. Backup and restore")
-        output_fn("8. Exit")
+        output_fn("8. Undo last change")
+        output_fn("9. Exit")
         choice = input_fn("Choose an option: ").strip()
 
         if choice == "1":
+            before_create = tuple(sessions)
             session = create_session(input_fn, output_fn)
             sessions.append(session)
             try:
@@ -714,6 +832,9 @@ def run(
                 output_fn(f"Storage error: {error}")
                 sessions.pop()
                 continue
+            undo_stack.append(("create new session", before_create))
+            if len(undo_stack) > 20:
+                undo_stack.pop(0)
             output_fn("Payment session saved.")
             print_session(session, output_fn)
             continue
@@ -728,6 +849,7 @@ def run(
             selected = choose_session(tuple(sessions), input_fn, output_fn)
             if selected is None:
                 continue
+            before_change = tuple(sessions)
             updated, changed = changes_menu(selected, input_fn, output_fn)
             if not changed:
                 continue
@@ -739,6 +861,9 @@ def run(
                 output_fn(f"Storage error: {error}")
                 sessions[selected_index] = selected
                 continue
+            undo_stack.append(("change saved session", before_change))
+            if len(undo_stack) > 20:
+                undo_stack.pop(0)
             output_fn("Changes saved.")
             continue
 
@@ -748,6 +873,7 @@ def run(
                 continue
             if not confirm_session_deletion(selected, input_fn, output_fn):
                 continue
+            before_delete = tuple(sessions)
             selected_index = sessions.index(selected)
             sessions.pop(selected_index)
             try:
@@ -756,6 +882,9 @@ def run(
                 output_fn(f"Storage error: {error}")
                 sessions.insert(selected_index, selected)
                 continue
+            undo_stack.append(("delete session", before_delete))
+            if len(undo_stack) > 20:
+                undo_stack.pop(0)
             output_fn("Session deleted.")
             continue
 
@@ -770,14 +899,33 @@ def run(
         if choice == "7":
             imported = backup_menu(repository, input_fn, output_fn)
             if imported is not None:
+                before_import = tuple(sessions)
                 sessions = list(imported)
+                undo_stack.append(("replace sessions from backup", before_import))
+                if len(undo_stack) > 20:
+                    undo_stack.pop(0)
             continue
 
         if choice == "8":
+            if not undo_stack:
+                output_fn("Nothing to undo.")
+                continue
+            description, before = undo_stack.pop()
+            try:
+                repository.save(before)
+            except SessionStorageError as error:
+                output_fn(f"Storage error: {error}")
+                undo_stack.append((description, before))
+                continue
+            sessions = list(before)
+            output_fn(f"Undid: {description}.")
+            continue
+
+        if choice == "9":
             output_fn("Goodbye.")
             return sessions[-1] if sessions else None
 
-        output_fn("Error: Choose 1, 2, 3, 4, 5, 6, 7, or 8.")
+        output_fn("Error: Choose 1, 2, 3, 4, 5, 6, 7, 8, or 9.")
 
 
 if __name__ == "__main__":

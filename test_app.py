@@ -190,7 +190,7 @@ class ReceiptTests(unittest.TestCase):
             (receipt,),
             session_id="menu-session",
         )
-        inputs = iter(["1", "2026-11-10", "2", "1", "1", "6.00", "10"])
+        inputs = iter(["1", "2026-11-10", "2", "1", "1", "6.00", "16"])
         output: list[str] = []
 
         updated, changed = changes_menu(
@@ -253,7 +253,7 @@ class ReceiptTests(unittest.TestCase):
             (receipt,),
             session_id="responsible-menu-session",
         )
-        inputs = iter(["3", "1", "1", "1,3", "10"])
+        inputs = iter(["3", "1", "1", "1,3", "16"])
         output: list[str] = []
 
         updated, changed = changes_menu(
@@ -291,7 +291,7 @@ class ReceiptTests(unittest.TestCase):
             )
             repository.save((session,))
 
-            cancel_inputs = iter(["4", "1", "n", "8"])
+            cancel_inputs = iter(["4", "1", "n", "9"])
             run(
                 input_fn=lambda _: next(cancel_inputs),
                 output_fn=lambda _: None,
@@ -299,13 +299,138 @@ class ReceiptTests(unittest.TestCase):
             )
             self.assertEqual(len(repository.load()), 1)
 
-            delete_inputs = iter(["4", "1", "yes", "8"])
+            delete_inputs = iter(["4", "1", "yes", "9"])
             run(
                 input_fn=lambda _: next(delete_inputs),
                 output_fn=lambda _: None,
                 repository=repository,
             )
             self.assertEqual(repository.load(), ())
+
+    def test_category_and_note_fields_round_trip(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b),
+            (
+                ReceiptItem(
+                    Product(
+                        "Milk",
+                        2,
+                        Decimal("2.50"),
+                        "Groceries",
+                        "Whole milk",
+                    ),
+                    (self.a, self.b),
+                ),
+            ),
+            payer=self.a,
+            category="Food",
+            note="Weekly shop",
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b),
+            (receipt,),
+            session_id="category-session",
+            category="Household",
+            note="Roommate grocery run",
+        )
+
+        with TemporaryDirectory() as directory:
+            repository = SessionRepository(
+                Path(directory) / "data" / "sessions.json"
+            )
+            repository.save((session,))
+            loaded = repository.load()
+
+        self.assertEqual(loaded[0].category, "Household")
+        self.assertEqual(loaded[0].note, "Roommate grocery run")
+        self.assertEqual(loaded[0].receipts[0].category, "Food")
+        self.assertEqual(loaded[0].receipts[0].note, "Weekly shop")
+        product = loaded[0].receipts[0].items[0].product
+        self.assertEqual(product.category, "Groceries")
+        self.assertEqual(product.note, "Whole milk")
+
+    def test_filter_search_includes_categories_and_notes(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b),
+            (
+                ReceiptItem(
+                    Product(
+                        "Milk",
+                        1,
+                        Decimal("3.00"),
+                        "Groceries",
+                        "Whole milk",
+                    ),
+                    (self.a,),
+                ),
+            ),
+            category="Food",
+            note="Weekly shop",
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b),
+            (receipt,),
+            session_id="search-category",
+            category="Household",
+            note="Roommate run",
+        )
+
+        self.assertEqual(
+            len(filter_sessions((session,), query="groceries")),
+            1,
+        )
+        self.assertEqual(
+            len(filter_sessions((session,), query="roommate")),
+            1,
+        )
+        self.assertEqual(
+            len(filter_sessions((session,), query="weekly")),
+            1,
+        )
+
+    def test_run_can_undo_category_edit_and_session_deletion(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b),
+            (
+                ReceiptItem(
+                    Product("Milk", 1, Decimal("3.00")),
+                    (self.a, self.b),
+                ),
+            ),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b),
+            (receipt,),
+            session_id="undo-session",
+        )
+
+        with TemporaryDirectory() as directory:
+            repository = SessionRepository(
+                Path(directory) / "data" / "sessions.json"
+            )
+            repository.save((session,))
+
+            inputs = iter([
+                "3", "1", "10", "Groceries", "16",
+                "8",
+                "4", "1", "yes",
+                "8",
+                "9",
+            ])
+            run(
+                input_fn=lambda _: next(inputs),
+                output_fn=lambda _: None,
+                repository=repository,
+            )
+            restored = repository.load()
+            self.assertEqual(len(restored), 1)
+            self.assertEqual(restored[0].category, "")
 
     def test_entity_edit_helpers_update_store_product_quantity_and_delete_item(self) -> None:
         receipt = Receipt(

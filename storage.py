@@ -29,12 +29,16 @@ def _receipt_to_dict(receipt: Receipt) -> dict[str, Any]:
     return {
         "store": receipt.store.name,
         "payer": receipt.payer.name if receipt.payer is not None else None,
+        "category": receipt.category,
+        "note": receipt.note,
         "items": [
             {
                 "name": item.product.name,
                 "quantity": item.product.quantity,
                 "unit_price": str(item.product.unit_price),
                 "participants": [person.name for person in item.participants],
+                "category": item.product.category,
+                "note": item.product.note,
             }
             for item in receipt.items
         ],
@@ -47,6 +51,8 @@ def _session_to_dict(session: PaymentSession) -> dict[str, Any]:
         "date": session.session_date.isoformat(),
         "people": [person.name for person in session.people],
         "receipts": [_receipt_to_dict(receipt) for receipt in session.receipts],
+        "category": session.category,
+        "note": session.note,
     }
 
 
@@ -72,6 +78,8 @@ def _session_from_dict(raw: Any) -> PaymentSession:
                         raw_item["name"],
                         raw_item["quantity"],
                         Decimal(raw_item["unit_price"]),
+                        raw_item.get("category", ""),
+                        raw_item.get("note", ""),
                     ),
                     participants,
                 )
@@ -83,13 +91,22 @@ def _session_from_dict(raw: Any) -> PaymentSession:
             else None
         )
         receipts.append(
-            Receipt(Store(raw_receipt["store"]), people, tuple(items), payer)
+            Receipt(
+                Store(raw_receipt["store"]),
+                people,
+                tuple(items),
+                payer,
+                raw_receipt.get("category", ""),
+                raw_receipt.get("note", ""),
+            )
         )
     return PaymentSession(
         session_date=date.fromisoformat(raw["date"]),
         people=people,
         receipts=tuple(receipts),
         session_id=raw["id"],
+        category=raw.get("category", ""),
+        note=raw.get("note", ""),
     )
 
 
