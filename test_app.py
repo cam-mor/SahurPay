@@ -14,7 +14,7 @@ from app import (
     parse_money,
     parse_session_date,
 )
-from main import changes_menu
+from main import changes_menu, run
 from storage import SessionRepository
 
 
@@ -187,7 +187,7 @@ class ReceiptTests(unittest.TestCase):
             (receipt,),
             session_id="menu-session",
         )
-        inputs = iter(["1", "2026-11-10", "2", "1", "1", "6.00", "3"])
+        inputs = iter(["1", "2026-11-10", "2", "1", "1", "6.00", "4"])
         output: list[str] = []
 
         updated, changed = changes_menu(
@@ -198,6 +198,111 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(updated.session_date, date(2026, 11, 10))
         self.assertEqual(updated.total, Decimal("6.00"))
         self.assertIn("=== Changes ===", output)
+
+    def test_changing_responsible_people_recalculates_totals(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(
+                    Product("Shared item", 1, Decimal("10.00")),
+                    (self.a, self.b),
+                ),
+            ),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="responsible-session",
+        )
+
+        updated = session.with_item_participants(
+            0,
+            0,
+            (self.a, self.c),
+        )
+
+        self.assertEqual(
+            updated.person_totals(),
+            {
+                "A": Decimal("5.00"),
+                "B": Decimal("0.00"),
+                "C": Decimal("5.00"),
+            },
+        )
+        self.assertEqual(sum(updated.person_totals().values()), updated.total)
+
+    def test_changes_menu_can_change_responsible_people(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(
+                    Product("Shared item", 1, Decimal("10.00")),
+                    (self.a, self.b),
+                ),
+            ),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="responsible-menu-session",
+        )
+        inputs = iter(["3", "1", "1", "1,3", "4"])
+        output: list[str] = []
+
+        updated, changed = changes_menu(
+            session, lambda _: next(inputs), output.append
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(
+            updated.receipts[0].items[0].participants,
+            (self.a, self.c),
+        )
+        self.assertIn("Currently responsible: A, B", output)
+
+    def test_run_can_delete_and_cancel_session_deletion(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(
+                    Product("Shared item", 1, Decimal("10.00")),
+                    (self.a, self.b, self.c),
+                ),
+            ),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="delete-session",
+        )
+
+        with TemporaryDirectory() as directory:
+            repository = SessionRepository(
+                Path(directory) / "data" / "sessions.json"
+            )
+            repository.save((session,))
+
+            cancel_inputs = iter(["4", "1", "n", "5"])
+            run(
+                input_fn=lambda _: next(cancel_inputs),
+                output_fn=lambda _: None,
+                repository=repository,
+            )
+            self.assertEqual(len(repository.load()), 1)
+
+            delete_inputs = iter(["4", "1", "yes", "5"])
+            run(
+                input_fn=lambda _: next(delete_inputs),
+                output_fn=lambda _: None,
+                repository=repository,
+            )
+            self.assertEqual(repository.load(), ())
 
 
 if __name__ == "__main__":

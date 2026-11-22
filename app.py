@@ -124,6 +124,16 @@ class Receipt:
         )
         return Receipt(self.store, self.people, tuple(updated_items))
 
+    def with_item_participants(
+        self, item_index: int, participants: tuple[Person, ...]
+    ) -> Receipt:
+        if item_index < 0 or item_index >= len(self.items):
+            raise IndexError("Receipt item index is out of range.")
+        updated_items = list(self.items)
+        item = updated_items[item_index]
+        updated_items[item_index] = ReceiptItem(item.product, participants)
+        return Receipt(self.store, self.people, tuple(updated_items))
+
 
 @dataclass(frozen=True)
 class PaymentSession:
@@ -176,6 +186,25 @@ class PaymentSession:
         updated_receipts[receipt_index] = updated_receipts[
             receipt_index
         ].with_item_price(item_index, unit_price)
+        return PaymentSession(
+            session_date=self.session_date,
+            people=self.people,
+            receipts=tuple(updated_receipts),
+            session_id=self.session_id,
+        )
+
+    def with_item_participants(
+        self,
+        receipt_index: int,
+        item_index: int,
+        participants: tuple[Person, ...],
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].with_item_participants(item_index, participants)
         return PaymentSession(
             session_date=self.session_date,
             people=self.people,

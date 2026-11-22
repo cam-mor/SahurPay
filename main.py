@@ -241,6 +241,20 @@ def choose_session(
     )
 
 
+def confirm_session_deletion(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> bool:
+    output_fn(
+        f"Delete the {session.session_date.isoformat()} session "
+        f"with {len(session.receipts)} store(s)?"
+    )
+    answer = input_fn("Are you sure? (y/N): ").strip().lower()
+    if answer not in {"y", "yes"}:
+        output_fn("Deletion cancelled.")
+        return False
+    return True
+
+
 def choose_store_index(
     session: PaymentSession, input_fn: Input, output_fn: Output
 ) -> int | None:
@@ -324,10 +338,32 @@ def change_item_price(
     return session.with_item_price(receipt_index, item_index, new_price)
 
 
+def change_responsible_people(
+    session: PaymentSession, input_fn: Input, output_fn: Output
+) -> PaymentSession:
+    receipt_index = choose_store_index(session, input_fn, output_fn)
+    if receipt_index is None:
+        return session
+    receipt = session.receipts[receipt_index]
+    item_index = choose_item_index(receipt, input_fn, output_fn)
+    if item_index is None:
+        return session
+    item = receipt.items[item_index]
+    current_names = ", ".join(person.name for person in item.participants)
+    output_fn(f"Currently responsible: {current_names}")
+    participants = read_participants(session.people, input_fn, output_fn)
+    return session.with_item_participants(
+        receipt_index,
+        item_index,
+        participants,
+    )
+
+
 ChangeHandler = Callable[[PaymentSession, Input, Output], PaymentSession]
 CHANGE_HANDLERS: dict[str, tuple[str, ChangeHandler]] = {
     "1": ("Change session date", change_date),
     "2": ("Change item price", change_item_price),
+    "3": ("Change responsible people", change_responsible_people),
 }
 
 
@@ -341,9 +377,10 @@ def changes_menu(
         output_fn("=== Changes ===")
         for number, (label, _) in CHANGE_HANDLERS.items():
             output_fn(f"{number}. {label}")
-        output_fn("3. Return to main menu")
+        return_option = str(max(int(number) for number in CHANGE_HANDLERS) + 1)
+        output_fn(f"{return_option}. Return to main menu")
         choice = input_fn("Choose a change: ").strip()
-        if choice == "3":
+        if choice == return_option:
             return current, changed
         handler_entry = CHANGE_HANDLERS.get(choice)
         if handler_entry is None:
@@ -373,7 +410,8 @@ def run(
         output_fn("1. Log a new payment session")
         output_fn("2. View saved sessions")
         output_fn("3. Changes")
-        output_fn("4. Exit")
+        output_fn("4. Delete a session")
+        output_fn("5. Exit")
         choice = input_fn("Choose an option: ").strip()
 
         if choice == "1":
@@ -414,10 +452,27 @@ def run(
             continue
 
         if choice == "4":
+            selected = choose_session(tuple(sessions), input_fn, output_fn)
+            if selected is None:
+                continue
+            if not confirm_session_deletion(selected, input_fn, output_fn):
+                continue
+            selected_index = sessions.index(selected)
+            sessions.pop(selected_index)
+            try:
+                repository.save(sessions)
+            except SessionStorageError as error:
+                output_fn(f"Storage error: {error}")
+                sessions.insert(selected_index, selected)
+                continue
+            output_fn("Session deleted.")
+            continue
+
+        if choice == "5":
             output_fn("Goodbye.")
             return sessions[-1] if sessions else None
 
-        output_fn("Error: Choose 1, 2, 3, or 4.")
+        output_fn("Error: Choose 1, 2, 3, 4, or 5.")
 
 
 if __name__ == "__main__":
