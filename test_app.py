@@ -11,6 +11,9 @@ from app import (
     Receipt,
     ReceiptItem,
     Store,
+    calculate_balances,
+    calculate_settlements,
+    filter_sessions,
     parse_money,
     parse_session_date,
 )
@@ -187,7 +190,7 @@ class ReceiptTests(unittest.TestCase):
             (receipt,),
             session_id="menu-session",
         )
-        inputs = iter(["1", "2026-11-10", "2", "1", "1", "6.00", "4"])
+        inputs = iter(["1", "2026-11-10", "2", "1", "1", "6.00", "10"])
         output: list[str] = []
 
         updated, changed = changes_menu(
@@ -250,7 +253,7 @@ class ReceiptTests(unittest.TestCase):
             (receipt,),
             session_id="responsible-menu-session",
         )
-        inputs = iter(["3", "1", "1", "1,3", "4"])
+        inputs = iter(["3", "1", "1", "1,3", "10"])
         output: list[str] = []
 
         updated, changed = changes_menu(
@@ -288,7 +291,7 @@ class ReceiptTests(unittest.TestCase):
             )
             repository.save((session,))
 
-            cancel_inputs = iter(["4", "1", "n", "5"])
+            cancel_inputs = iter(["4", "1", "n", "8"])
             run(
                 input_fn=lambda _: next(cancel_inputs),
                 output_fn=lambda _: None,
@@ -296,13 +299,171 @@ class ReceiptTests(unittest.TestCase):
             )
             self.assertEqual(len(repository.load()), 1)
 
-            delete_inputs = iter(["4", "1", "yes", "5"])
+            delete_inputs = iter(["4", "1", "yes", "8"])
             run(
                 input_fn=lambda _: next(delete_inputs),
                 output_fn=lambda _: None,
                 repository=repository,
             )
             self.assertEqual(repository.load(), ())
+
+    def test_entity_edit_helpers_update_store_product_quantity_and_delete_item(self) -> None:
+        receipt = Receipt(
+            Store("Old Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(Product("Old item", 1, Decimal("3.00")), (self.a,)),
+                ReceiptItem(Product("Keep item", 2, Decimal("2.50")), (self.b,)),
+            ),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="entity-edit",
+        )
+
+        updated = session.with_store_name(0, "New Store")
+        updated = updated.with_item_name(0, 0, "New item")
+        updated = updated.with_item_quantity(0, 0, 4)
+        updated = updated.without_item(0, 1)
+
+        self.assertEqual(updated.receipts[0].store.name, "New Store")
+        self.assertEqual(updated.receipts[0].items[0].product.name, "New item")
+        self.assertEqual(updated.receipts[0].items[0].product.quantity, 4)
+        self.assertEqual(updated.total, Decimal("12.00"))
+
+    def test_delete_store_preserves_remaining_store_receipts(self) -> None:
+        first = Receipt(
+            Store("Market"),
+            (self.a, self.b),
+            (ReceiptItem(Product("Bread", 1, Decimal("4.00")), (self.a,)),),
+        )
+        second = Receipt(
+            Store("Pharmacy"),
+            (self.a, self.b),
+            (ReceiptItem(Product("Soap", 1, Decimal("5.00")), (self.b,)),),
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b),
+            (first, second),
+            session_id="store-delete",
+        )
+
+        updated = session.without_store(0)
+
+        self.assertEqual(len(updated.receipts), 1)
+        self.assertEqual(updated.receipts[0].store.name, "Pharmacy")
+        self.assertEqual(updated.total, Decimal("5.00"))
+
+    def test_settlements_use_payer_and_responsible_shares(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(
+                    Product("Shared item", 1, Decimal("30.00")),
+                    (self.a, self.b, self.c),
+                ),
+            ),
+            payer=self.a,
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="settlement",
+        )
+
+        balances = calculate_balances((session,))
+        settlements = calculate_settlements((session,))
+
+        self.assertEqual(
+            balances,
+            {
+                "A": Decimal("20.00"),
+                "B": Decimal("-10.00"),
+                "C": Decimal("-10.00"),
+            },
+        )
+        self.assertEqual(len(settlements), 2)
+        self.assertEqual(settlements[0].from_person.name, "B")
+        self.assertEqual(settlements[0].to_person.name, "A")
+        self.assertEqual(settlements[0].amount, Decimal("10.00"))
+        self.assertEqual(settlements[1].from_person.name, "C")
+        self.assertEqual(settlements[1].to_person.name, "A")
+
+    def test_filter_sessions_by_store_person_and_date(self) -> None:
+        market = Receipt(
+            Store("Market"),
+            (self.a, self.b, self.c),
+            (ReceiptItem(Product("Bread", 1, Decimal("4.00")), (self.a,)),),
+        )
+        pharmacy = Receipt(
+            Store("Pharmacy"),
+            (self.a, self.b, self.c),
+            (ReceiptItem(Product("Soap", 1, Decimal("5.00")), (self.c,)),),
+        )
+        sessions = (
+            PaymentSession(
+                date(2026, 11, 8),
+                (self.a, self.b, self.c),
+                (market,),
+                session_id="market-session",
+            ),
+            PaymentSession(
+                date(2026, 11, 9),
+                (self.a, self.b, self.c),
+                (pharmacy,),
+                session_id="pharmacy-session",
+            ),
+        )
+
+        market_matches = filter_sessions(
+            sessions,
+            query="market",
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 8),
+        )
+        person_matches = filter_sessions(sessions, person_name="C")
+
+        self.assertEqual(len(market_matches), 1)
+        self.assertEqual(market_matches[0].session_id, "market-session")
+        self.assertEqual(len(person_matches), 2)
+
+    def test_backup_export_and_import_preserve_payer_and_entities(self) -> None:
+        receipt = Receipt(
+            Store("Corner Store"),
+            (self.a, self.b, self.c),
+            (
+                ReceiptItem(
+                    Product("Shared item", 2, Decimal("5.00")),
+                    (self.a, self.b),
+                ),
+            ),
+            payer=self.a,
+        )
+        session = PaymentSession(
+            date(2026, 11, 9),
+            (self.a, self.b, self.c),
+            (receipt,),
+            session_id="backup-session",
+        )
+
+        with TemporaryDirectory() as directory:
+            source = SessionRepository(
+                Path(directory) / "data" / "sessions.json"
+            )
+            backup_path = Path(directory) / "backup.json"
+            source.save((session,))
+            source.export_backup(backup_path)
+            imported = source.import_backup(backup_path)
+
+        self.assertEqual(len(imported), 1)
+        self.assertEqual(imported[0].session_id, "backup-session")
+        self.assertEqual(imported[0].receipts[0].payer.name, "A")
+        self.assertEqual(imported[0].total, Decimal("10.00"))
 
 
 if __name__ == "__main__":

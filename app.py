@@ -57,6 +57,12 @@ class Product:
     def with_unit_price(self, unit_price: Decimal) -> Product:
         return Product(self.name, self.quantity, unit_price)
 
+    def with_name(self, name: str) -> Product:
+        return Product(name, self.quantity, self.unit_price)
+
+    def with_quantity(self, quantity: int) -> Product:
+        return Product(self.name, quantity, self.unit_price)
+
 
 @dataclass(frozen=True)
 class ReceiptItem:
@@ -92,12 +98,15 @@ class Receipt:
     store: Store
     people: tuple[Person, ...]
     items: tuple[ReceiptItem, ...]
+    payer: Person | None = None
 
     def __post_init__(self) -> None:
         names = [person.name for person in self.people]
         if len(names) != len(set(names)):
             raise ValueError("Person names must be unique.")
         known_names = set(names)
+        if self.payer is not None and self.payer.name not in known_names:
+            raise ValueError("The payer must belong to the receipt group.")
         for item in self.items:
             if any(person.name not in known_names for person in item.participants):
                 raise ValueError("Every participant must belong to the receipt group.")
@@ -122,7 +131,7 @@ class Receipt:
             item.product.with_unit_price(unit_price),
             item.participants,
         )
-        return Receipt(self.store, self.people, tuple(updated_items))
+        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
 
     def with_item_participants(
         self, item_index: int, participants: tuple[Person, ...]
@@ -132,7 +141,44 @@ class Receipt:
         updated_items = list(self.items)
         item = updated_items[item_index]
         updated_items[item_index] = ReceiptItem(item.product, participants)
-        return Receipt(self.store, self.people, tuple(updated_items))
+        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+
+    def with_store_name(self, name: str) -> Receipt:
+        return Receipt(Store(name), self.people, self.items, self.payer)
+
+    def with_item_name(self, item_index: int, name: str) -> Receipt:
+        if item_index < 0 or item_index >= len(self.items):
+            raise IndexError("Receipt item index is out of range.")
+        updated_items = list(self.items)
+        item = updated_items[item_index]
+        updated_items[item_index] = ReceiptItem(
+            item.product.with_name(name),
+            item.participants,
+        )
+        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+
+    def with_item_quantity(self, item_index: int, quantity: int) -> Receipt:
+        if item_index < 0 or item_index >= len(self.items):
+            raise IndexError("Receipt item index is out of range.")
+        updated_items = list(self.items)
+        item = updated_items[item_index]
+        updated_items[item_index] = ReceiptItem(
+            item.product.with_quantity(quantity),
+            item.participants,
+        )
+        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+
+    def without_item(self, item_index: int) -> Receipt:
+        if item_index < 0 or item_index >= len(self.items):
+            raise IndexError("Receipt item index is out of range.")
+        updated_items = list(self.items)
+        updated_items.pop(item_index)
+        if not updated_items:
+            raise ValueError("A store receipt must keep at least one item.")
+        return Receipt(self.store, self.people, tuple(updated_items), self.payer)
+
+    def with_payer(self, payer: Person | None) -> Receipt:
+        return Receipt(self.store, self.people, self.items, payer)
 
 
 @dataclass(frozen=True)
@@ -211,6 +257,209 @@ class PaymentSession:
             receipts=tuple(updated_receipts),
             session_id=self.session_id,
         )
+
+    def with_store_name(self, receipt_index: int, name: str) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].with_store_name(name)
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+        )
+
+    def with_item_name(
+        self, receipt_index: int, item_index: int, name: str
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].with_item_name(item_index, name)
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+        )
+
+    def with_item_quantity(
+        self, receipt_index: int, item_index: int, quantity: int
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].with_item_quantity(item_index, quantity)
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+        )
+
+    def without_item(
+        self, receipt_index: int, item_index: int
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].without_item(item_index)
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+        )
+
+    def without_store(self, receipt_index: int) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts.pop(receipt_index)
+        if not updated_receipts:
+            raise ValueError("A payment session must keep at least one store.")
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+        )
+
+    def with_payer(
+        self, receipt_index: int, payer: Person | None
+    ) -> PaymentSession:
+        if receipt_index < 0 or receipt_index >= len(self.receipts):
+            raise IndexError("Store receipt index is out of range.")
+        updated_receipts = list(self.receipts)
+        updated_receipts[receipt_index] = updated_receipts[
+            receipt_index
+        ].with_payer(payer)
+        return PaymentSession(
+            self.session_date,
+            self.people,
+            tuple(updated_receipts),
+            self.session_id,
+        )
+
+
+@dataclass(frozen=True)
+class Settlement:
+    from_person: Person
+    to_person: Person
+    amount: Decimal
+
+
+def calculate_balances(
+    sessions: Iterable[PaymentSession],
+) -> dict[str, Decimal]:
+    session_list = tuple(sessions)
+    people: dict[str, Person] = {}
+    for session in session_list:
+        for person in session.people:
+            people.setdefault(person.name, person)
+    balances = {name: Decimal("0.00") for name in people}
+
+    for session in session_list:
+        for receipt in session.receipts:
+            if receipt.payer is not None:
+                balances[receipt.payer.name] = quantize_money(
+                    balances[receipt.payer.name] + receipt.total
+                )
+            for name, amount in receipt.person_totals().items():
+                balances[name] = quantize_money(balances[name] - amount)
+    return balances
+
+
+def calculate_settlements(
+    sessions: Iterable[PaymentSession],
+) -> tuple[Settlement, ...]:
+    session_list = tuple(sessions)
+    balances = calculate_balances(session_list)
+    named_people: dict[str, Person] = {}
+    for session in session_list:
+        for person in session.people:
+            named_people.setdefault(person.name, person)
+
+    creditors = [
+        [name, quantize_money(amount)]
+        for name, amount in balances.items()
+        if amount > 0
+    ]
+    debtors = [
+        [name, quantize_money(-amount)]
+        for name, amount in balances.items()
+        if amount < 0
+    ]
+    settlements: list[Settlement] = []
+    debtor_index = 0
+    creditor_index = 0
+
+    while debtor_index < len(debtors) and creditor_index < len(creditors):
+        debtor_name, debt = debtors[debtor_index]
+        creditor_name, credit = creditors[creditor_index]
+        amount = min(debt, credit)
+        if amount > 0:
+            settlements.append(
+                Settlement(
+                    named_people[debtor_name],
+                    named_people[creditor_name],
+                    quantize_money(amount),
+                )
+            )
+        debt = quantize_money(debt - amount)
+        credit = quantize_money(credit - amount)
+        debtors[debtor_index][1] = debt
+        creditors[creditor_index][1] = credit
+        if debt == 0:
+            debtor_index += 1
+        if credit == 0:
+            creditor_index += 1
+    return tuple(settlements)
+
+
+def filter_sessions(
+    sessions: Iterable[PaymentSession],
+    query: str = "",
+    person_name: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> tuple[PaymentSession, ...]:
+    needle = query.strip().casefold()
+    result: list[PaymentSession] = []
+    for session in sessions:
+        if start_date is not None and session.session_date < start_date:
+            continue
+        if end_date is not None and session.session_date > end_date:
+            continue
+        if person_name:
+            if not any(
+                person.name.casefold() == person_name.strip().casefold()
+                for person in session.people
+            ):
+                continue
+        if needle:
+            searchable: list[str] = [session.session_id]
+            for person in session.people:
+                searchable.append(person.name)
+            for receipt in session.receipts:
+                searchable.append(receipt.store.name)
+                if receipt.payer is not None:
+                    searchable.append(receipt.payer.name)
+                for item in receipt.items:
+                    searchable.append(item.product.name)
+            if not any(needle in value.casefold() for value in searchable):
+                continue
+        result.append(session)
+    return tuple(sorted(result, key=lambda session: session.session_date, reverse=True))
 
 
 def parse_money(value: str) -> Decimal:

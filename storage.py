@@ -28,6 +28,7 @@ def _person_by_name(people: tuple[Person, ...], name: str) -> Person:
 def _receipt_to_dict(receipt: Receipt) -> dict[str, Any]:
     return {
         "store": receipt.store.name,
+        "payer": receipt.payer.name if receipt.payer is not None else None,
         "items": [
             {
                 "name": item.product.name,
@@ -75,7 +76,15 @@ def _session_from_dict(raw: Any) -> PaymentSession:
                     participants,
                 )
             )
-        receipts.append(Receipt(Store(raw_receipt["store"]), people, tuple(items)))
+        payer_name = raw_receipt.get("payer")
+        payer = (
+            _person_by_name(people, payer_name)
+            if payer_name is not None
+            else None
+        )
+        receipts.append(
+            Receipt(Store(raw_receipt["store"]), people, tuple(items), payer)
+        )
     return PaymentSession(
         session_date=date.fromisoformat(raw["date"]),
         people=people,
@@ -131,3 +140,52 @@ class SessionRepository:
         finally:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink()
+
+    def export_backup(self, path: Path | str) -> None:
+        export_path = Path(path)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        sessions = self.load()
+        payload = {
+            "version": 1,
+            "sessions": [_session_to_dict(session) for session in sessions],
+        }
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=export_path.parent,
+                prefix=f"{export_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as file:
+                temporary_path = Path(file.name)
+                json.dump(payload, file, indent=2)
+                file.write("\n")
+            os.replace(temporary_path, export_path)
+        except OSError as error:
+            raise SessionStorageError(
+                f"Could not export backup to {export_path}: {error}"
+            ) from error
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
+
+    def import_backup(self, path: Path | str) -> tuple[PaymentSession, ...]:
+        import_path = Path(path)
+        try:
+            raw_data = json.loads(import_path.read_text(encoding="utf-8"))
+            if not isinstance(raw_data, dict):
+                raise ValueError("The backup file must contain an object.")
+            raw_sessions = raw_data.get("sessions")
+            if not isinstance(raw_sessions, list):
+                raise ValueError("The backup file has no sessions list.")
+            imported = tuple(_session_from_dict(raw) for raw in raw_sessions)
+            ids = [session.session_id for session in imported]
+            if len(ids) != len(set(ids)):
+                raise ValueError("The backup contains duplicate session IDs.")
+            return imported
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise SessionStorageError(
+                f"Could not import backup from {import_path}: {error}"
+            ) from error
