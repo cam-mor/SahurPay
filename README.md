@@ -1,10 +1,10 @@
 # SahurPay
 
-SahurPay is a small, no-nonsense terminal app for splitting receipts with friends or roomies.
+SahurPay is a small WIP terminal app for splitting receipts with friends or roomies.
 
 Go to the store, enter what was bought, choose who is responsible for each product, and SahurPay will keep track of the receipt and who owes what. It can also handle multiple stores in one payment session.
 
-This started as a personal project, so it is intentionally simple and terminal-first. No account, server, database setup, or mysterious cloud subscription is involved.
+This started as a personal project, so it is intentionally simple and terminal-first (Although a visual interface is planned for comfort). All local.
 
 ## Features
 
@@ -182,6 +182,3 @@ Possible future improvements:
 - Currency selection and localization
 - Session labels and product photos
 
-## License
-
-This is a personal project. Choose and add a license before publishing it publicly if you want to specify how other people may reuse the code.
